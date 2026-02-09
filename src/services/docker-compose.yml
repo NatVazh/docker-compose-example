@@ -1,0 +1,213 @@
+version: "3.8"
+
+x-common: &common
+  restart: unless-stopped
+  networks:
+    - app-network
+
+services:
+  postgres:
+    <<: *common
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    image: vazhna/services-postgres:1.0.0
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d users_db" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    <<: *common
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "15672:15672"
+    environment:
+      RABBIT_MQ_USER: ${RABBIT_MQ_USER}
+      RABBIT_MQ_PASSWORD: ${RABBIT_MQ_PASSWORD}
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "check_running" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nginx-proxy:
+    <<: *common
+    image: nginx:stable-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      gateway-service:
+        condition: service_started
+
+  session-service:
+    <<: *common
+    build:
+      context: ./session-service
+      dockerfile: Dockerfile
+    image: vazhna/services-session-service:1.0.0
+    ports:
+      - "8081:8081"
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: users_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  hotel-service:
+    <<: *common
+    build:
+      context: ./hotel-service
+      dockerfile: Dockerfile
+    image: vazhna/services-hotel-service:1.0.0
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: hotels_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  payment-service:
+    <<: *common
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+    image: vazhna/services-payment-service:1.0.0
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: payments_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  loyalty-service:
+    <<: *common
+    build:
+      context: ./loyalty-service
+      dockerfile: Dockerfile
+    image: vazhna/services-loyalty-service:1.0.0
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: balances_db
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  report-service:
+    <<: *common
+    build:
+      context: ./report-service
+      dockerfile: Dockerfile
+    image: vazhna/services-report-service:1.0.0
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: statistics_db
+      RABBIT_MQ_HOST: ${RABBIT_MQ_HOST}
+      RABBIT_MQ_PORT: ${RABBIT_MQ_PORT}
+      RABBIT_MQ_USER: ${RABBIT_MQ_USER}
+      RABBIT_MQ_PASSWORD: ${RABBIT_MQ_PASSWORD}
+      RABBIT_MQ_QUEUE_NAME: ${RABBIT_MQ_QUEUE_NAME}
+      RABBIT_MQ_EXCHANGE: ${RABBIT_MQ_EXCHANGE}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  booking-service:
+    <<: *common
+    build:
+      context: ./booking-service
+      dockerfile: Dockerfile
+    image: vazhna/services-booking-service:1.0.0
+    environment:
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: reservations_db
+      RABBIT_MQ_HOST: ${RABBIT_MQ_HOST}
+      RABBIT_MQ_PORT: ${RABBIT_MQ_PORT}
+      RABBIT_MQ_USER: ${RABBIT_MQ_USER}
+      RABBIT_MQ_PASSWORD: ${RABBIT_MQ_PASSWORD}
+      RABBIT_MQ_QUEUE_NAME: ${RABBIT_MQ_QUEUE_NAME}
+      RABBIT_MQ_EXCHANGE: ${RABBIT_MQ_EXCHANGE}
+      HOTEL_SERVICE_HOST: ${HOTEL_SERVICE_HOST}
+      HOTEL_SERVICE_PORT: ${HOTEL_SERVICE_PORT}
+      PAYMENT_SERVICE_HOST: ${PAYMENT_SERVICE_HOST}
+      PAYMENT_SERVICE_PORT: ${PAYMENT_SERVICE_PORT}
+      LOYALTY_SERVICE_HOST: ${LOYALTY_SERVICE_HOST}
+      LOYALTY_SERVICE_PORT: ${LOYALTY_SERVICE_PORT}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      hotel-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      loyalty-service:
+        condition: service_started
+
+  gateway-service:
+    <<: *common
+    build:
+      context: ./gateway-service
+      dockerfile: Dockerfile
+    image: vazhna/services-gateway-service:1.0.0
+    ports:
+      - "8087:8087"
+    environment:
+      SESSION_SERVICE_HOST: ${SESSION_SERVICE_HOST}
+      SESSION_SERVICE_PORT: ${SESSION_SERVICE_PORT}
+      HOTEL_SERVICE_HOST: ${HOTEL_SERVICE_HOST}
+      HOTEL_SERVICE_PORT: ${HOTEL_SERVICE_PORT}
+      BOOKING_SERVICE_HOST: ${BOOKING_SERVICE_HOST}
+      BOOKING_SERVICE_PORT: ${BOOKING_SERVICE_PORT}
+      PAYMENT_SERVICE_HOST: ${PAYMENT_SERVICE_HOST}
+      PAYMENT_SERVICE_PORT: ${PAYMENT_SERVICE_PORT}
+      LOYALTY_SERVICE_HOST: ${LOYALTY_SERVICE_HOST}
+      LOYALTY_SERVICE_PORT: ${LOYALTY_SERVICE_PORT}
+      REPORT_SERVICE_HOST: ${REPORT_SERVICE_HOST}
+      REPORT_SERVICE_PORT: ${REPORT_SERVICE_PORT}
+    depends_on:
+      session-service:
+        condition: service_started
+      hotel-service:
+        condition: service_started
+      booking-service:
+        condition: service_started
+      loyalty-service:
+        condition: service_started
+
+volumes:
+  postgres-data:
+
+networks:
+  app-network:
+    driver: bridge

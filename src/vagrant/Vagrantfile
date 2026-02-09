@@ -1,0 +1,42 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  # Sync code
+  config.vm.synced_folder ".", "/home/vagrant"
+  config.vm.box = "hashicorp-education/ubuntu-24-04"
+  config.vm.box_version = "0.1.0"
+
+  # Manager node
+  config.vm.define "manager01" do |manager|
+    manager.vm.hostname = "manager01"
+    manager.vm.network "private_network", ip: "192.168.56.10"
+    # Install Docker and dependencies
+    manager.vm.provision "shell", name: "install-dependencies", path: "scripts/install-dependencies.sh"
+    # Inin Swarm
+    manager.vm.provision "shell", name: "setup-swarm-manager", path: "scripts/setup-swarm-manager.sh"
+    # Start App
+    manager.vm.provision "shell", name: "deploy-app", inline: <<-SHELL
+      docker stack deploy -c docker-compose-swarm.yml hotel-app
+    SHELL
+    # Install Portainer
+    manager.vm.provision "shell", name: "deploy-portainer", inline: <<-SHELL
+      docker stack deploy -c portainer-agent-stack.yml portainer
+    SHELL
+  end
+
+  # Worker nodes
+  (1..2).each do |i|
+    config.vm.define "worker0#{i}" do |worker|
+      worker.vm.hostname = "worker0#{i}"
+      worker.vm.network "private_network", ip: "192.168.56.1#{i}"
+      # Sync only scripts directory
+      worker.vm.synced_folder "scripts", "/home/vagrant/scripts"
+      # Install Docker and dependencies
+      worker.vm.provision "shell", name: "install-dependencies", path: "scripts/install-dependencies.sh"
+      # Setup Swarm worker
+      worker.vm.provision "shell", name: "setup-swarm-worker", path: "scripts/setup-swarm-worker.sh",
+        args: ["192.168.56.10:2377"]
+      end
+  end
+end

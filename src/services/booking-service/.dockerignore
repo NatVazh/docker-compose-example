@@ -1,0 +1,12 @@
+**/.git
+**/target
+**/.classpath
+**/.project
+**/.settings
+**/*.iml
+**/*.ipr
+**/*.iws
+**/node_modules
+Dockerfile
+.dockerignore
+**/test

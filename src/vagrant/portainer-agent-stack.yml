@@ -1,0 +1,49 @@
+version: '3.9'
+
+networks:
+  agent_network:
+    driver: overlay
+
+volumes:
+  portainer_data:
+
+services:
+  agent_linux:
+    image: portainer/agent:latest
+    environment:
+      - AGENT_CLUSTER_ADDR=tasks.agent
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: bind
+        source: /var/lib/docker/volumes
+        target: /var/lib/docker/volumes
+    networks:
+      agent_network:
+        aliases:
+          - agent
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.platform.os == linux
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    command: -H tcp://tasks.agent:9001 --tlsskipverify
+    environment:
+      PORTAINER_AUTH: "false"
+    ports:
+      - target: 9000
+        published: 9000
+    volumes:
+      - portainer_data:/data
+    networks:
+      - agent_network
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
